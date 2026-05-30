@@ -1,0 +1,20 @@
+# Render deployment (https://render.com). One web service that builds the React app and runs
+# the Express server, which serves both the static frontend and the /api routes.
+#
+# Before first deploy:
+#   1. Commit data/dataset.json (the host needs the data; the .xlsx can't be regenerated there).
+#   2. In the Render dashboard, set OPENAI_API_KEY (optional — app falls back to a keyword
+#      parser without it).
+services:
+  - type: web
+    name: follow-the-money
+    runtime: node
+    plan: free
+    # --include=dev so the build has vite (a devDependency); tsx is a runtime dependency.
+    buildCommand: npm install --include=dev && npm run build
+    startCommand: npm run start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: OPENAI_API_KEY
+        sync: false # set this in the Render dashboard

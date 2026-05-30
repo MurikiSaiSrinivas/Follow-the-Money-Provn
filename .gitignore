@@ -1,0 +1,11 @@
+node_modules/
+.env
+logs/
+dist/
+# Internal build/scratch notes — not a deliverable.
+dump.md
+# NOTE: data/dataset.json (the 27MB derived cache) is intentionally COMMITTED so deploy hosts
+# (Render) have the data — the source .xlsx lives behind Provn auth and can't be regenerated there.
+# Regenerate locally with `npm run convert`.
+# The source spreadsheet is large and lives behind Provn auth — keep it out of git.
+*.xlsx
