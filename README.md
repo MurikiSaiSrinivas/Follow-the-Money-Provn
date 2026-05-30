@@ -7,8 +7,28 @@ plain‑English questions. No SQL, no spreadsheets, no BI training.
 > Type *"who got paid the most in 2022?"* → the map transitions to that answer, and a short,
 > trustworthy finding appears beside it. Click any node to follow the money further.
 
+**▶ Live demo:** https://follow-the-money-io1n.onrender.com/
+*(free Render instance — first load may take ~30s to wake. Works without an API key via a keyword fallback.)*
+
 **Stack:** TypeScript · React (Vite) · Express · OpenAI (`gpt-4o-mini`) · `react-force-graph-2d`.
 **Data:** WA State `Vendor-Payments_2021-23.xlsx` (2 sheets, ~936K rows), parsed to an in‑memory cache.
+
+---
+
+## What it looks like
+
+The resting state — every agency and the 7 spending categories, edges colored by *what* the money was for:
+
+![The whole map](images/wholePic.png)
+
+| Ask a question → the map answers | Hover any node |
+|---|---|
+| ![Top vendors finding](images/topTenVendors.png) | ![Hover for money in/out](images/Hover.png) |
+| *Plain English in → the graph transitions to the answer, with a Finding card of code‑computed numbers.* | *Money in / money out / connections, on hover.* |
+
+Click any node to **follow the money** into its neighborhood:
+
+![Click to follow the money](images/clickToFollowTheMoney.png)
 
 ---
 
