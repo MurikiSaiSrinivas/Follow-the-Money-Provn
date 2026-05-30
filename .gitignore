@@ -2,8 +2,9 @@ node_modules/
 .env
 logs/
 dist/
-# Internal build/scratch notes — not a deliverable.
+# Internal build/scratch notes & personal prep aids — not deliverables.
 dump.md
+VIDEO_SCRIPT.md
 # NOTE: data/dataset.json (the 27MB derived cache) is intentionally COMMITTED so deploy hosts
 # (Render) have the data — the source .xlsx lives behind Provn auth and can't be regenerated there.
 # Regenerate locally with `npm run convert`.

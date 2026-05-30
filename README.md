@@ -10,6 +10,10 @@ plain‑English questions. No SQL, no spreadsheets, no BI training.
 **▶ Live demo:** https://follow-the-money-io1n.onrender.com/
 *(free Render instance — first load may take ~30s to wake. Works without an API key via a keyword fallback.)*
 
+> **Running locally is noticeably faster than the hosted demo.** The free Render instance has
+> limited CPU and cold‑starts; `npm run dev` (or `npm run start`) on your machine is snappier for
+> the graph and the AI round‑trips. Use the live link for a quick look, local for the real feel.
+
 **Stack:** TypeScript · React (Vite) · Express · OpenAI (`gpt-4o-mini`) · `react-force-graph-2d`.
 **Data:** WA State `Vendor-Payments_2021-23.xlsx` (2 sheets, ~936K rows), parsed to an in‑memory cache.
 
