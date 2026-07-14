@@ -5,6 +5,7 @@
 import {
   COL,
   type Dataset,
+  type GraphContext,
   type GroupBy,
   type Query,
   type QueryResult,
@@ -14,6 +15,26 @@ import {
 
 const REIMBURSEMENT_OBJECTS = new Set(["S", "T"]); // Inter/Intra-agency reimbursements
 
+/**
+ * Resolve the client-supplied grouping context into fast lookups (see AGENCY_GROUPS.md):
+ *   agencyToGroup — canonical agency name -> group NAME (each agency in at most one group).
+ *   scopeAgencies — when a group is in scope, the exact set of its member agencies (else null).
+ */
+function resolveContext(ctx: GraphContext = {}) {
+  const agencyToGroup = new Map<string, string>();
+  for (const g of ctx.groups ?? []) {
+    for (const a of g.agencies) {
+      if (!agencyToGroup.has(a)) agencyToGroup.set(a, g.name); // first wins (defensive)
+    }
+  }
+  let scopeAgencies: Set<string> | null = null;
+  if (ctx.scope) {
+    const scoped = (ctx.groups ?? []).find((g) => g.id === ctx.scope);
+    if (scoped && scoped.agencies.length) scopeAgencies = new Set(scoped.agencies);
+  }
+  return { agencyToGroup, scopeAgencies };
+}
+
 /** Resolve, per dataset, the category name for a given Object index (cached on the dataset). */
 function categoryResolver(ds: Dataset): (objIdx: number) => string {
   const byIdx = ds.dims.objects.map((code) => ds.objectToCategory[code] ?? code);
@@ -21,12 +42,21 @@ function categoryResolver(ds: Dataset): (objIdx: number) => string {
 }
 
 /** Build the group-key extractor for a row, returning a human-readable label. */
-function keyFn(ds: Dataset, groupBy: GroupBy, catOf: (i: number) => string): (r: Row) => string {
+function keyFn(
+  ds: Dataset,
+  groupBy: GroupBy,
+  catOf: (i: number) => string,
+  agencyToGroup: Map<string, string>,
+): (r: Row) => string {
   switch (groupBy) {
     case "vendor":
       return (r) => ds.dims.vendors[r[COL.VENDOR]];
     case "agency":
-      return (r) => ds.dims.agencies[r[COL.AGENCY]];
+      // Relabel lens: grouped agencies collapse to their group name; ungrouped stay individual.
+      return (r) => {
+        const a = ds.dims.agencies[r[COL.AGENCY]];
+        return agencyToGroup.get(a) ?? a;
+      };
     case "category":
       return (r) => catOf(r[COL.OBJECT]);
     case "subcategory":
@@ -78,7 +108,12 @@ function resolveValue(candidates: string[], query: string): string | undefined {
 }
 
 /** Whether a row passes the query filter. */
-function makePredicate(ds: Dataset, q: Query, catOf: (i: number) => string): (r: Row) => boolean {
+function makePredicate(
+  ds: Dataset,
+  q: Query,
+  catOf: (i: number) => string,
+  scopeAgencies: Set<string> | null,
+): (r: Row) => boolean {
   const f = q.filter ?? {};
   const excludeReimb = f.excludeReimbursements ?? true; // default: exclude S/T
   const fyIdx = f.fiscalYear ? ds.meta.fiscalYears.indexOf(f.fiscalYear) : -1;
@@ -93,6 +128,8 @@ function makePredicate(ds: Dataset, q: Query, catOf: (i: number) => string): (r:
   return (r) => {
     if (excludeReimb && REIMBURSEMENT_OBJECTS.has(ds.dims.objects[r[COL.OBJECT]])) return false;
     if (fyIdx >= 0 && r[COL.FY] !== fyIdx) return false;
+    // Scope filter: when a group is in scope, keep only its member agencies.
+    if (scopeAgencies && !scopeAgencies.has(ds.dims.agencies[r[COL.AGENCY]])) return false;
     if (agency && ds.dims.agencies[r[COL.AGENCY]] !== agency) return false;
     if (category && catOf(r[COL.OBJECT]) !== category) return false;
     if (vendorNeedle && !ds.dims.vendors[r[COL.VENDOR]].toLowerCase().includes(vendorNeedle)) return false;
@@ -100,11 +137,12 @@ function makePredicate(ds: Dataset, q: Query, catOf: (i: number) => string): (r:
   };
 }
 
-export function runQuery(ds: Dataset, rawQuery: Query): QueryResult {
+export function runQuery(ds: Dataset, rawQuery: Query, context: GraphContext = {}): QueryResult {
   const q = normalizeQuery(rawQuery);
+  const { agencyToGroup, scopeAgencies } = resolveContext(context);
   const catOf = categoryResolver(ds);
-  const pass = makePredicate(ds, q, catOf);
-  const key = keyFn(ds, q.groupBy, catOf);
+  const pass = makePredicate(ds, q, catOf, scopeAgencies);
+  const key = keyFn(ds, q.groupBy, catOf, agencyToGroup);
 
   // Accumulate sum + count per group in a single pass.
   const sums = new Map<string, number>();

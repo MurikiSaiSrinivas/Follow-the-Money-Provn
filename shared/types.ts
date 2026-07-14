@@ -36,6 +36,23 @@ export interface Query {
   chart?: "bar" | "line";  // default: line for time axes, else bar
 }
 
+// ---- Agency groups (client-owned; sent with each request) ----
+// A group bundles several agencies into one named "super-agency". Grouping is a deterministic
+// relabel/filter lens applied by the engine and graph builders — the AI is never involved.
+// See AGENCY_GROUPS.md.
+
+export interface AgencyGroup {
+  id: string;          // stable client id, e.g. "g1"
+  name: string;        // display label, default "Group 1", user-renameable
+  agencies: string[];  // canonical agency names (exact strings from ds.dims.agencies)
+}
+
+/** Grouping context threaded alongside a Query into runQuery() and the graph builders. */
+export interface GraphContext {
+  groups?: AgencyGroup[];
+  scope?: string | null;   // group id in scope, or null/undefined = "All"
+}
+
 export interface ResultRow {
   label: string;
   value: number;   // the metric value for this group
@@ -79,6 +96,10 @@ export interface Dataset {
   };
   rows: Row[];
 }
+
+// ---- Graph shapes (kept in sync with server/graph.ts and web/src/api.ts) ----
+// (The graph builders own the canonical GraphNode/GraphLink/GraphData; this note documents that
+//  a group super-node is modelled as type "agency" with isGroup=true so its color is unchanged.)
 
 // Column indices into a Row (keep in sync with convert_data.py rowSchema)
 export const COL = {
