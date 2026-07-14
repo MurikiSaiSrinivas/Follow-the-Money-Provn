@@ -157,6 +157,15 @@ export function LedgerGraph({
             ctx.strokeStyle = BRASS;
             ctx.stroke();
           }
+          // Group super-node: a detached ring around the pin-head. Node color stays the agency
+          // color — the ring is the only thing distinguishing a group from a single agency.
+          if (n.isGroup) {
+            ctx.beginPath();
+            ctx.arc(n.x, n.y, r + 3 / scale, 0, 2 * Math.PI);
+            ctx.lineWidth = 1.5 / scale;
+            ctx.strokeStyle = CREAM;
+            ctx.stroke();
+          }
 
           const showLabel = n.focus || n.type === "category" || n.id === hoverNode?.id;
           if (showLabel && !dim) {
@@ -181,7 +190,7 @@ export function LedgerGraph({
 function Tooltip({ node, flow, x, y }: { node: GraphNode; flow?: Flow; x: number; y: number }) {
   return (
     <div className="lg-tooltip" style={{ left: x + 14, top: y + 14 }}>
-      <div className="tt-type">{node.type}</div>
+      <div className="tt-type">{node.isGroup ? "group" : node.type}</div>
       <div className="tt-name">{node.name}</div>
       <dl className="tt-rows num">
         {flow && flow.in > 0 && <div><dt>{node.type === "category" ? "Spent here" : "Money in"}</dt><dd>{fmtCurrencyFull(flow.in)}</dd></div>}

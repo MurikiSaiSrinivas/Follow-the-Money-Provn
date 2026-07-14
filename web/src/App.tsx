@@ -1,6 +1,18 @@
-import { useEffect, useRef, useState } from "react";
-import { ask, fetchGraph, fetchOverview, health, type AskResponse, type GraphData, type GraphNode, type HealthResponse } from "./api";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  ask,
+  fetchGraph,
+  fetchOverview,
+  health,
+  type AgencyGroup,
+  type AskResponse,
+  type GraphData,
+  type GraphNode,
+  type GroupCtx,
+  type HealthResponse,
+} from "./api";
 import { LedgerGraph } from "./components/LedgerGraph";
+import { GroupsPanel } from "./components/GroupsPanel";
 import { ResultChart } from "./components/ResultChart";
 import { fmtCount, fmtCurrencyCompact, fmtPercent } from "../../shared/format";
 import { CATEGORY_COLOR, NODE_COLOR } from "../../shared/categories";
@@ -11,6 +23,16 @@ const EXAMPLES = [
   "Top vendors for Travel",
   "Spending change 2022 to 2023",
 ];
+
+const GROUPS_KEY = "ftm.groups";
+function loadGroups(): AgencyGroup[] {
+  try {
+    const arr = JSON.parse(localStorage.getItem(GROUPS_KEY) ?? "[]");
+    return Array.isArray(arr) ? arr : [];
+  } catch {
+    return [];
+  }
+}
 
 export function App() {
   const [info, setInfo] = useState<HealthResponse | null>(null);
@@ -23,13 +45,39 @@ export function App() {
   const [q, setQ] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // ---- agency groups ----
+  const [groups, setGroups] = useState<AgencyGroup[]>(loadGroups);
+  const [scope, setScope] = useState<string | null>(null); // group id in scope, or null = All
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [lastQ, setLastQ] = useState<string | null>(null); // last question, so scope changes re-run it
+
+  // ctxRef always holds the latest grouping context for async callbacks.
+  const ctxRef = useRef<GroupCtx>({ groups, scope });
+  ctxRef.current = { groups, scope };
+  const scopeName = useMemo(() => groups.find((g) => g.id === scope)?.name ?? null, [groups, scope]);
+
+  // Persist groups across refreshes.
+  useEffect(() => {
+    try {
+      localStorage.setItem(GROUPS_KEY, JSON.stringify(groups));
+    } catch {
+      /* ignore quota / private-mode errors */
+    }
+  }, [groups]);
+
+  // If the scoped group is deleted, fall back to "All".
+  useEffect(() => {
+    if (scope && !groups.some((g) => g.id === scope)) setScope(null);
+  }, [groups, scope]);
+
   // boot: load facts + the overview map
   useEffect(() => {
-    health().then((h) => {
-      setInfo(h);
-      const y = h.facts.fiscalYears[h.facts.fiscalYears.length - 1];
-      setFy(y);
-    }).catch(() => {});
+    health()
+      .then((h) => {
+        setInfo(h);
+        setFy(h.facts.fiscalYears[h.facts.fiscalYears.length - 1]);
+      })
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -37,12 +85,13 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fy]);
 
-  async function loadOverview(year: string) {
+  async function loadOverview(year: string, c: GroupCtx = ctxRef.current) {
     setLoading(true);
     setError(null);
     setAnswer(null);
+    setLastQ(null);
     try {
-      setGraph(await fetchOverview(year));
+      setGraph(await fetchOverview(year, c));
     } catch (e) {
       setError("Could not load the overview.");
     } finally {
@@ -50,14 +99,15 @@ export function App() {
     }
   }
 
-  async function runAsk(question: string) {
+  async function runAsk(question: string, c: GroupCtx = ctxRef.current) {
     if (!question.trim()) return;
     setLoading(true);
     setError(null);
     try {
-      const r = await ask(question);
+      const r = await ask(question, c);
       setAnswer(r);
       setGraph(r.graph);
+      setLastQ(question);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong.");
     } finally {
@@ -69,13 +119,40 @@ export function App() {
     setLoading(true);
     setError(null);
     setAnswer(null);
+    setLastQ(null);
     try {
-      setGraph(await fetchGraph({ focusType: n.type as "vendor" | "agency", focusName: n.name, fiscalYear: fy, depth: 1 }));
+      setGraph(
+        await fetchGraph(
+          {
+            focusType: n.isGroup ? "group" : (n.type as "vendor" | "agency"),
+            focusName: n.name,
+            fiscalYear: fy,
+            depth: 1,
+          },
+          ctxRef.current,
+        ),
+      );
     } catch (e) {
       setError("Could not open that node.");
     } finally {
       setLoading(false);
     }
+  }
+
+  // Re-run the current view (answer or overview) under a new scope.
+  function pickScope(next: string | null) {
+    setScope(next);
+    const c: GroupCtx = { groups, scope: next };
+    if (lastQ) runAsk(lastQ, c);
+    else loadOverview(fy, c);
+  }
+
+  // Closing the builder: reflect any group edits in whatever's on screen.
+  function closePanel() {
+    setPanelOpen(false);
+    const c: GroupCtx = { groups, scope };
+    if (lastQ) runAsk(lastQ, c);
+    else loadOverview(fy, c);
   }
 
   return (
@@ -99,8 +176,16 @@ export function App() {
             <button key={y} className={fy === y ? "on" : ""} onClick={() => setFy(y)}>FY {y}</button>
           ))}
         </div>
-        <button className="ghost" onClick={() => loadOverview(fy)}>Reset map</button>
+        <button className={"ghost" + (panelOpen ? " on" : "")} onClick={() => setPanelOpen((o) => !o)}>
+          Groups{groups.length ? ` · ${groups.length}` : ""}
+        </button>
+        <button className="ghost" onClick={() => { setScope(null); loadOverview(fy, { groups, scope: null }); }}>
+          Reset map
+        </button>
       </div>
+
+      {/* group builder */}
+      {panelOpen && <GroupsPanel groups={groups} onChange={setGroups} onClose={closePanel} />}
 
       {/* answer card */}
       {answer && (
@@ -128,6 +213,27 @@ export function App() {
 
       {/* bottom ask bar */}
       <div className="askbar-wrap">
+        {/* scope chips — appear once at least one group exists */}
+        {groups.length > 0 && (
+          <div className="scope-row">
+            <span className="scope-lbl">Ask about</span>
+            <div className="seg dark">
+              <button className={scope === null ? "on" : ""} onClick={() => pickScope(null)}>All</button>
+              {groups.map((g) => (
+                <button
+                  key={g.id}
+                  className={scope === g.id ? "on" : ""}
+                  disabled={g.agencies.length === 0}
+                  title={g.agencies.length === 0 ? "Add agencies to this group first" : undefined}
+                  onClick={() => pickScope(g.id)}
+                >
+                  {g.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         <form
           className="askbar-pill"
           onSubmit={(e) => { e.preventDefault(); runAsk(q); }}
@@ -136,7 +242,7 @@ export function App() {
             ref={inputRef}
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Ask the ledger — e.g. who got paid the most in 2022?"
+            placeholder={scopeName ? `Ask about ${scopeName} — e.g. who do they pay the most?` : "Ask the ledger — e.g. who got paid the most in 2022?"}
             autoFocus
           />
           <button type="submit" disabled={loading}>{loading ? "…" : "Ask"}</button>
@@ -150,6 +256,7 @@ export function App() {
         <div className="legend">
           <div className="legend-line">
             <span className="lg-key"><i style={{ background: NODE_COLOR.agency }} /> Agency</span>
+            <span className="lg-key"><i className="lg-ring" style={{ background: NODE_COLOR.agency }} /> Group</span>
             <span className="lg-key"><i style={{ background: NODE_COLOR.vendor }} /> Vendor</span>
           </div>
           <div className="legend-line">

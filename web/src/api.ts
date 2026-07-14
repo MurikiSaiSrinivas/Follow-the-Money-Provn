@@ -1,4 +1,12 @@
-import type { Query, QueryResult } from "../../shared/types";
+import type { AgencyGroup, Query, QueryResult } from "../../shared/types";
+
+export type { AgencyGroup };
+
+/** Grouping context sent with every data request (see AGENCY_GROUPS.md). */
+export interface GroupCtx {
+  groups?: AgencyGroup[];
+  scope?: string | null;
+}
 
 export interface AskResponse {
   question: string;
@@ -21,11 +29,11 @@ export interface HealthResponse {
   };
 }
 
-export async function ask(question: string): Promise<AskResponse> {
+export async function ask(question: string, ctx: GroupCtx = {}): Promise<AskResponse> {
   const r = await fetch("/api/ask", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ question }),
+    body: JSON.stringify({ question, ...ctx }),
   });
   if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "Request failed");
   return r.json();
@@ -50,6 +58,7 @@ export interface GraphNode {
   type: "agency" | "vendor" | "category";
   value: number;
   focus?: boolean;
+  isGroup?: boolean; // collapsed agency group — drawn with a ring
 }
 export interface GraphLink {
   source: string;
@@ -65,8 +74,12 @@ export interface GraphData {
   truncated: { vendorsShown: number; vendorsTotal: number } | null;
 }
 
-export async function fetchOverview(fiscalYear: string): Promise<GraphData> {
-  const r = await fetch(`/api/overview?fiscalYear=${encodeURIComponent(fiscalYear)}`);
+export async function fetchOverview(fiscalYear: string, ctx: GroupCtx = {}): Promise<GraphData> {
+  const r = await fetch("/api/overview", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fiscalYear, ...ctx }),
+  });
   if (!r.ok) throw new Error("Overview failed");
   return r.json();
 }
@@ -77,20 +90,18 @@ export async function searchEntities(q: string, type: "vendor" | "agency" | "all
 }
 
 export interface GraphParams {
-  focusType: "vendor" | "agency";
+  focusType: "vendor" | "agency" | "group";
   focusName: string;
   fiscalYear: string;
   depth: 1 | 2;
 }
 
-export async function fetchGraph(p: GraphParams): Promise<GraphData> {
-  const qs = new URLSearchParams({
-    focusType: p.focusType,
-    focusName: p.focusName,
-    fiscalYear: p.fiscalYear,
-    depth: String(p.depth),
+export async function fetchGraph(p: GraphParams, ctx: GroupCtx = {}): Promise<GraphData> {
+  const r = await fetch("/api/graph", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...p, ...ctx }),
   });
-  const r = await fetch(`/api/graph?${qs}`);
   if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? "Graph failed");
   return r.json();
 }
